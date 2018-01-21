@@ -1,0 +1,207 @@
+---
+title: "Movie recommendation"
+author: "Shobhit Tiwari"
+output:
+  html_document: default
+  html_notebook: default
+data: January 21, 2018
+---
+
+
+```{r include=FALSE}
+library(stringr)
+library(reshape2)
+library(recommenderlab)
+```
+
+## Synopsis
+
+In this project we will predict missing ratings for all users and also recommend 10 movies for each user.We will use MovieLense dataset that for building our recommender.
+
+Lets quickly load and explore the dataset
+
+```{r}
+
+data(MovieLense)
+movMat<- as(MovieLense, "matrix")
+dim(movMat)
+
+```
+
+
+So we have a rating matrix of 943 users and 1663 movies. Lets check no of available ratings in the matrix
+
+
+```{r}
+prod(dim(movMat)) - sum(is.na(movMat))
+
+```
+
+
+So we can see around 100k ratings are present in the dataset. 
+
+
+Let's see the ratings by user 1 
+
+```{r}
+head(movMat[1,])
+
+```
+
+Lets quickly see the histogram of ratings per user and movie 
+
+
+```{r}
+## number of ratings per user
+hist(rowCounts(MovieLense), main = "Ratings per movie")
+
+## number of ratings per movie
+hist(colCounts(MovieLense), main = "Ratings per user")
+
+```
+
+We can see that very few movies are having high no of ratings and very few users have rated a large no of movies.
+
+Now let us see a heatmap visualization of part of the  dataset
+
+```{r}
+## visualize part of the matrix
+image(MovieLense[1:100,1:100])
+
+
+```
+
+
+Now we will split data into trian and test set using evaluation scheme function in the package.
+
+ 
+```{r}
+set.seed(1233)
+e <- evaluationScheme(MovieLense, method="split", train=0.9, given=-5, goodRating=4)
+
+```
+
+
+We are splitting data into two parts training containing 90% of the users and 10% users are kept for test set with 5 ratings as unknown and rest as known. 
+
+
+First we will build a model using user based collaborative filtering. In UBCF rating for a user is predicted by finding similarity between user ratins and then taking weighted average of user raitngs to predict the missing ratings for the user. 
+
+Having users who give high (or low) ratings to all their movies might bias the results.
+We will normalize the ratings to minimize user bias.
+
+```{r}
+#Create UBCF Recommender Model. UBCF stands for User-Based Collaborative Filtering
+UBCF_model <- Recommender(getData(e, "train"), 
+                                 method = "UBCF", 
+                                 param=list(normalize = "Z-score",
+                                                 method="Cosine",
+                                                 nn=50))
+```
+
+Now we will see top 10 movie recommendation for user 1 
+
+
+```{r}
+
+firstUserPred <- predict(UBCF_model, 
+                 MovieLense[1,], 
+                 n=10, type = "topNList") 
+firstUserPred <- as(firstUserPred, "list")
+# Get recommendation for first user only top 10 movies 
+firstUserPred[[1]]
+
+```
+
+
+Now predicting for the test set and checking accuracy of model
+
+```{r}
+recom <- predict(UBCF_model, 
+                 getData(e, "known"), 
+                 n=10, type = "ratings") 
+calcPredictionAccuracy(recom, getData(e, "unknown"))
+```
+
+
+Secondly we will build an item based model. In this approach we predict ratings for a movie finding similar movies and taking weighted average of their ratings. 
+
+
+```{r}
+IBCF_model <- Recommender(getData(e, "train"), 
+                                 method = "IBCF", 
+                                 param=list(normalize = "Z-score",
+                                                 method="Cosine",
+                                                 k=50))
+
+```
+
+
+Now we will see top 10 movie recommendation for user 1 
+
+
+```{r}
+
+firstUserPred.IBCF <- predict(IBCF_model, 
+                 MovieLense[1,], 
+                 n=10, type = "topNList") 
+firstUserPred.IBCF <- as(firstUserPred.IBCF, "list")
+# Get recommendation for first user only top 10 movies 
+firstUserPred.IBCF[[1]]
+
+```
+
+
+
+Lets check on test set and calculate the RMSE 
+
+
+```{r}
+
+recom.IBCF <- predict(IBCF_model, 
+                 getData(e, "known"), 
+                 n=10, type = "ratings") 
+calcPredictionAccuracy(recom.IBCF, getData(e, "unknown"))
+
+```
+
+
+Lets build a matrix factorization model for recommendation using Alternating least squares model
+
+```{r}
+
+als_model <- Recommender(getData(e, "train"), 
+                                 method = "ALS", 
+                                 param=list(normalize = "Z-score",lambda=0.1, n_factors=200, 
+                                  n_iterations=10, seed = 214, verbose = FALSE))
+
+
+```
+
+
+Now predicting for the test set and checking accuracy of model
+
+```{r}
+recom_als <- predict(als_model, 
+                 getData(e, "known"), 
+                 n=10, type = "ratings") 
+calcPredictionAccuracy(recom_als, getData(e, "unknown"))
+```
+
+
+Now we will see top 10 movie recommendation for user 1 
+
+```{r}
+firstUserals_Pred <- predict(als_model, newdata =  MovieLense[1,],n=10, type = "topNList") 
+firstUserals_Pred <- as(firstUserals_Pred, "list")
+# Get recommendation for first user only top 10 movies 
+firstUserals_Pred[[1]]
+
+```
+
+
+
+
+## Conclusion
+
+As we can see from our analysis user based collaborative filterting gives the best result in this case. 
